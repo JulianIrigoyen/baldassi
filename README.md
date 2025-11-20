@@ -267,17 +267,17 @@ internal/
   worker/            - Worker pool for concurrency
 ```
 
-## What Works
+## Features
 
-✅ WebSocket block streaming with reconnect
-✅ Multi-RPC failover (6 endpoints)
-✅ Concurrent pair processing (3 pairs in parallel)
-✅ Parallel trade size checks (3 workers per pair)
-✅ Shared RPC manager (6 connections instead of 18)
-✅ Block-scoped cache invalidation
-✅ Checkpoint recovery
-✅ Rate limiting
-✅ Tests pass (no race conditions)
+- WebSocket block streaming with reconnect
+- Multi-RPC failover (6 endpoints)
+- Concurrent pair processing (3 pairs in parallel)
+- Parallel trade size checks (3 workers per pair)
+- Shared RPC manager (6 connections instead of 18)
+- Block-scoped cache invalidation
+- Checkpoint recovery
+- Rate limiting
+- Tests pass (no race conditions)
 
 ## Known Limitations
 
