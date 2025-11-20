@@ -187,14 +187,18 @@ func (g *GasCalculator) calculateGasData(ctx context.Context) (*GasData, error) 
 	g.calculationCount++
 	g.mu.Unlock()
 
-	// Debug logging
+	// Debug logging with all components
 	g.logger.Debug().
+		Str("component", "gas").
 		Uint64("block", gasData.BlockNumber).
 		Str("base_fee_gwei", weiToGwei(baseFee)).
 		Str("priority_fee_gwei", weiToGwei(priorityFee)).
+		Int64("gas_limit", UniswapV3SwapGas).
+		Float64("eth_price_usd", ethPrice.InexactFloat64()).
+		Float64("total_gas_eth", costInETH.InexactFloat64()).
 		Float64("swap_cost_usd", costInUSD.InexactFloat64()).
 		Dur("calc_time", g.lastCalculationTime).
-		Msg("Gas data updated")
+		Msg("Gas data updated (detailed)")
 
 	return gasData, nil
 }

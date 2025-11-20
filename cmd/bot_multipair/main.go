@@ -152,7 +152,7 @@ func main() {
 			// Use first available Binance client (they all have ETH price access)
 			for _, clients := range pairClients {
 				quote, err := clients.binance.GetPrice(ctx, decimal.NewFromInt(1))
-				if err == nil {
+				if err == nil && quote != nil {
 					return quote.BuyPrice, nil
 				}
 			}

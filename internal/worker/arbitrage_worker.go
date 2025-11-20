@@ -18,8 +18,8 @@ type ArbitrageOpportunityChecker struct {
 	GasCalculator *gas.GasCalculator
 	TradeSize     decimal.Decimal
 	BlockNumber   uint64
-	PairName      string // Trading pair name (e.g., "ETH-USDC")
-	PoolAddress   string // Uniswap pool address
+	PairName      string          // Trading pair name (e.g., "ETH-USDC")
+	PoolAddress   string          // Uniswap pool address
 	MinProfitUSD  decimal.Decimal // Minimum profit threshold from config
 
 	// Result handling
@@ -119,64 +119,69 @@ func (j *ArbitrageOpportunityChecker) Execute(ctx context.Context) error {
 	var localOpps []*exchange.ArbitrageOpportunity
 
 	// CEX→DEX: Buy at CEX ASK, Sell at DEX BID
-	cexToDexSpread := dexQuote.SellPrice.Sub(cexQuote.BuyPrice)
-	log.Debug().
-		Str("pair", j.PairName).
-		Str("amount", j.TradeSize.StringFixed(2)).
-		Str("direction", "CEX→DEX").
-		Str("spread", cexToDexSpread.StringFixed(2)).
-		Bool("positive", cexToDexSpread.GreaterThan(decimal.Zero)).
-		Msg("Checking CEX→DEX spread")
+	// Calculate profit components explicitly
+	profit := j.calculateProfit(ctx, cexQuote, dexQuote, j.TradeSize, "CEX→DEX")
+	if profit != nil {
+		// Explicit profit pipeline
+		spreadPerUnit := dexQuote.SellPrice.Sub(cexQuote.BuyPrice)
+		grossUSD := profit.ProfitUSD
+		gasUSD := profit.GasEstimate
+		netUSD := profit.NetProfit
+		profitPercent := profit.ProfitPercent
 
-	if dexQuote.SellPrice.GreaterThan(cexQuote.BuyPrice) {
-		profit := j.calculateProfit(ctx, cexQuote, dexQuote, j.TradeSize, "CEX→DEX")
-		if profit != nil && profit.NetProfit.GreaterThan(j.MinProfitUSD) {
+		log.Debug().
+			Str("pair", j.PairName).
+			Str("amount", j.TradeSize.StringFixed(2)).
+			Str("direction", "CEX→DEX").
+			Str("spread_per_unit", spreadPerUnit.StringFixed(4)).
+			Str("gross_usd", grossUSD.StringFixed(2)).
+			Str("gas_usd", gasUSD.StringFixed(2)).
+			Str("net_usd", netUSD.StringFixed(2)).
+			Str("profit_percent", profitPercent.StringFixed(4)).
+			Bool("profitable", netUSD.GreaterThan(j.MinProfitUSD)).
+			Msg("CEX→DEX evaluation")
+
+		if netUSD.GreaterThan(j.MinProfitUSD) {
 			log.Info().
 				Str("pair", j.PairName).
 				Str("amount", j.TradeSize.StringFixed(2)).
-				Str("net_profit", profit.NetProfit.StringFixed(2)).
+				Str("net_profit", netUSD.StringFixed(2)).
 				Msg("CEX→DEX opportunity found!")
 			profit.BlockNumber = j.BlockNumber
 			localOpps = append(localOpps, profit)
-		} else if profit != nil {
-			log.Debug().
-				Str("pair", j.PairName).
-				Str("amount", j.TradeSize.StringFixed(2)).
-				Str("gross", cexToDexSpread.StringFixed(2)).
-				Str("gas", profit.GasEstimate.StringFixed(2)).
-				Str("net", profit.NetProfit.StringFixed(2)).
-				Msg("CEX→DEX spread too small after gas")
 		}
 	}
 
 	// DEX→CEX: Buy DEX ask, Sell CEX bid
-	dexToCexSpread := cexQuote.SellPrice.Sub(dexQuote.BuyPrice)
-	log.Debug().
-		Str("pair", j.PairName).
-		Str("amount", j.TradeSize.StringFixed(2)).
-		Str("direction", "DEX→CEX").
-		Str("spread", dexToCexSpread.StringFixed(2)).
-		Bool("positive", dexToCexSpread.GreaterThan(decimal.Zero)).
-		Msg("Checking DEX→CEX spread")
+	profit = j.calculateProfit(ctx, dexQuote, cexQuote, j.TradeSize, "DEX→CEX")
+	if profit != nil {
+		// Explicit profit pipeline
+		spreadPerUnit := cexQuote.SellPrice.Sub(dexQuote.BuyPrice)
+		grossUSD := profit.ProfitUSD
+		gasUSD := profit.GasEstimate
+		netUSD := profit.NetProfit
+		profitPercent := profit.ProfitPercent
 
-	if cexQuote.SellPrice.GreaterThan(dexQuote.BuyPrice) {
-		profit := j.calculateProfit(ctx, dexQuote, cexQuote, j.TradeSize, "DEX→CEX")
-		if profit != nil && profit.NetProfit.GreaterThan(j.MinProfitUSD) {
+		log.Debug().
+			Str("pair", j.PairName).
+			Str("amount", j.TradeSize.StringFixed(2)).
+			Str("direction", "DEX→CEX").
+			Str("spread_per_unit", spreadPerUnit.StringFixed(4)).
+			Str("gross_usd", grossUSD.StringFixed(2)).
+			Str("gas_usd", gasUSD.StringFixed(2)).
+			Str("net_usd", netUSD.StringFixed(2)).
+			Str("profit_percent", profitPercent.StringFixed(4)).
+			Bool("profitable", netUSD.GreaterThan(j.MinProfitUSD)).
+			Msg("DEX→CEX evaluation")
+
+		if netUSD.GreaterThan(j.MinProfitUSD) {
 			log.Info().
 				Str("pair", j.PairName).
 				Str("amount", j.TradeSize.StringFixed(2)).
-				Str("net_profit", profit.NetProfit.StringFixed(2)).
+				Str("net_profit", netUSD.StringFixed(2)).
 				Msg("DEX→CEX opportunity found!")
 			profit.BlockNumber = j.BlockNumber
 			localOpps = append(localOpps, profit)
-		} else if profit != nil {
-			log.Debug().
-				Str("pair", j.PairName).
-				Str("amount", j.TradeSize.StringFixed(2)).
-				Str("gross", dexToCexSpread.StringFixed(2)).
-				Str("gas", profit.GasEstimate.StringFixed(2)).
-				Str("net", profit.NetProfit.StringFixed(2)).
-				Msg("DEX→CEX spread too small after gas")
 		}
 	}
 
@@ -219,8 +224,24 @@ func (j *ArbitrageOpportunityChecker) calculateProfit(ctx context.Context, buyQu
 	}
 
 	// Calculate profit (sell revenue - buy cost)
-	// Fees are already included
+	// Fees are already included in BuyTotal and SellTotal
 	profitBeforeGas := sellRevenue.Sub(buyTotal)
+
+	// Sanity check: compare gross with simple spread calculation
+	simpleSpread := sellPrice.Sub(buyPrice)
+	expectedGrossFromSpread := simpleSpread.Mul(amount)
+
+	log.Debug().
+		Str("pair", j.PairName).
+		Str("direction", direction).
+		Str("amount", amount.StringFixed(2)).
+		Str("simple_spread", simpleSpread.StringFixed(4)).
+		Str("expected_gross_from_spread", expectedGrossFromSpread.StringFixed(2)).
+		Str("actual_gross_usd", profitBeforeGas.StringFixed(2)).
+		Str("buy_total_with_fees", buyTotal.StringFixed(2)).
+		Str("sell_revenue_after_fees", sellRevenue.StringFixed(2)).
+		Str("fees_impact", profitBeforeGas.Sub(expectedGrossFromSpread).StringFixed(2)).
+		Msg("Profit calculation breakdown")
 
 	// Get calculated gas cost
 	gasEstimate := decimal.NewFromFloat(30) // use defa

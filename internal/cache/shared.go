@@ -78,7 +78,13 @@ func (c *SharedCache) GetETHPriceWithFallback(blockNumber uint64, fetchFunc func
 		return decimal.NewFromInt(3100)
 	}
 
-	// Update cache
+	// Validate price before caching
+	if price.IsZero() || price.IsNegative() {
+		// Invalid price, use fallback and don't cache
+		return decimal.NewFromInt(3100)
+	}
+
+	// Update cache with valid price
 	c.SetETHPrice(price, blockNumber)
 	return price
 }
